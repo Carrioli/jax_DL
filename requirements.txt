@@ -1,0 +1,9 @@
+jax
+jaxlib
+optax
+tqdm
+pandas
+torch
+torchvision
+urllib3==1.26.15
+dm-haiku
