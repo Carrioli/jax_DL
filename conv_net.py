@@ -1,13 +1,14 @@
+import haiku as hk
 import jax
 import jax.numpy as jnp
-from jax import random, grad, vmap, jit, value_and_grad, nn, value_and_grad, lax
-from jax.nn import relu, selu, relu6
 import optax
+from jax import grad, jit, lax, nn, random, value_and_grad, vmap
+from jax.nn import relu, relu6, selu
 from optax import lion
-from tqdm import tqdm
-from load_data import LoadDataset
 from torch.utils.data import DataLoader, Dataset, random_split
-import haiku as hk
+from tqdm import tqdm
+
+from load_data import LoadDataset
 
 
 def init_params():
