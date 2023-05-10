@@ -12,16 +12,14 @@ from tqdm import tqdm
 from load_data import LoadDataset
 
 
-# TODO add parameters to standardize?
-# TODO should I use jax.lax.concatenate instead of reshape?
 
 # constants
 batch_size  = 512
 train_ratio = 0.8
 img_dim = 96
 patch_size = 16
-n_layers = 8 # number of transformer layers
-n_heads = 12  # number of transformer heads
+n_layers = 1 # number of transformer layers
+n_heads = 2  # number of transformer heads
 num_tokens = (img_dim // patch_size) ** 2 + 1
 D = (patch_size ** 2) * 3
 d_k = D // n_heads
@@ -114,9 +112,9 @@ def model(params, x):
     # Add learable positional encoding
     x += params['position_embeddings']
 
-    _, final_state = jax.lax.scan(lambda carry, x: transformer_block(params, carry, x), x, jnp.arange(n_layers), n_layers)
+    final_carry, _ = jax.lax.scan(lambda carry, x: transformer_block(params, carry, x), x, jnp.arange(n_layers))
 
-    cls_token = x[0]
+    cls_token = final_carry[0]
 
     x = jax.lax.dot(cls_token, params['mlp_head']['dense1']['w']) + params['mlp_head']['dense1']['b']
     x = jax.lax.dot(x, params['mlp_head']['dense2']['w']) + params['mlp_head']['dense2']['b']
@@ -184,8 +182,8 @@ if __name__ == '__main__':
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=8, prefetch_factor=5)
-    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=8, prefetch_factor=5)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, prefetch_factor=4)
+    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, prefetch_factor=4)
 
 
     # init model
