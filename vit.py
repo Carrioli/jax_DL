@@ -12,22 +12,21 @@ from tqdm import tqdm
 from load_data import LoadDataset
 
 
-# TODO use jax.lax.reshape, transpose, squeeze, dot (for matrix multiplication)
 # TODO add parameters to standardize?
 # TODO should I use jax.lax.concatenate instead of reshape?
 
 # constants
-batch_size  = 100
+batch_size  = 512
 train_ratio = 0.8
 img_dim = 96
 patch_size = 16
-n_layers = 4 # number of transformer layers
-n_heads = 6  # number of transformer heads
+n_layers = 8 # number of transformer layers
+n_heads = 12  # number of transformer heads
 num_tokens = (img_dim // patch_size) ** 2 + 1
 D = (patch_size ** 2) * 3
 d_k = D // n_heads
 d_v = D // n_heads
-lr = 2e-5
+lr = 0.001
 
 
 
@@ -57,7 +56,7 @@ def init_params(initializer):
             },
             'dense2': {
                 'w': initializer(keys[12], (D, 2)),
-                'b': jax.lax.squeeze(initializer(keys[12], (2, 1)), dimensions=(1,))
+                'b': jax.lax.squeeze(initializer(keys[13], (2, 1)), dimensions=(1,))
             }
         }
     }
@@ -142,16 +141,16 @@ def update(params, opt_state, x, y_true):
     return loss, params, opt_state
 
 
-def eval_fn(params, data_loader):
-    accuracies = [eval(params, jnp.array(x_batch), jnp.array(y_batch)) for (x_batch, y_batch) in iter(test_dl)]
-    return sum(accuracies)/len(accuracies)
-
-
 @jax.jit
 def eval(params, x_batch, y_batch):
     y_pred_batch = batched_model(params, x_batch)
     accuracy = jnp.mean(jnp.argmax(y_pred_batch, -1) == y_batch)
     return accuracy
+
+
+def eval_fn(params, data_loader):
+    accuracies = [eval(params, jnp.array(x_batch), jnp.array(y_batch)) for (x_batch, y_batch) in iter(data_loader)]
+    return sum(accuracies)/len(accuracies)
 
 
 def train_epoch(params, opt_state, data_loader, bar):
@@ -181,18 +180,18 @@ if __name__ == '__main__':
 
     # get data
     sub_path = 'histopathologic-cancer-detection/'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.1, augment=False)
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.8, augment=False)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=1, prefetch_factor=1)
-    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=1, prefetch_factor=1)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=8, prefetch_factor=5)
+    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=8, prefetch_factor=5)
 
 
     # init model
     initializer = nn.initializers.lecun_normal()
     params = init_params(initializer)
-    optimizer = optax.lion(learning_rate = lr)
+    optimizer = optax.adam(learning_rate = lr)
     opt_state = optimizer.init(params)
 
     # print constants
