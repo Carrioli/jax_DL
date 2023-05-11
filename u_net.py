@@ -146,25 +146,46 @@ def eval(params, x_batch, y_batch):
     return accuracy
 
 
+def train_epoch(params, opt_state, data_loader, bar):
+    epoch_loss = 0.0
+    for (batch_img, batch_label) in iter(data_loader):
+        x = jnp.array(batch_img) # batches need to be converted to jnp array
+        y_true = jnp.array(batch_label)
+        batch_loss, params, opt_state = update(params, opt_state, x, y_true)
+        epoch_loss += batch_loss
+        bar.update(1)
+    return params, opt_state, epoch_loss
+
+
+def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
+    bar = tqdm(total = n_epochs * len(train_dl), ncols = 150, leave = True)
+    bar.colour = '#0000ff'
+    for epoch in range(n_epochs):
+        bar.set_postfix(epoch = f'{epoch + 1} out of {n_epochs}')
+        params, opt_state, epoch_loss = train_epoch(params, opt_state, train_dl, bar)
+        # eval for each epoch
+        accuracy = eval_fn(params, test_dl)
+        tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {accuracy}')
+    return params
+
 if __name__ == '__main__':
     # constants
     batch_size  = 16
     num_epochs  = 30
     train_ratio = 0.8
+    lr = 2e-5
 
     # get data
-    # sub_path = 'histopathologic-cancer-detection/'
-    sub_path = './'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=64, sample_fraction=1.0, augment=True)
+    sub_path = 'histopathologic-cancer-detection/'
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=64, sample_fraction=0.2, augment=False)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=30, prefetch_factor=30, pin_memory=True)
-    test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=30, prefetch_factor=30)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5, pin_memory=True)
+    test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5)
 
-    # init
+     # init
     params = init_params()
-    lr = 2e-5
     optimizer = optax.lion(learning_rate = lr)
     opt_state = optimizer.init(params)
     activation = relu6
@@ -172,19 +193,8 @@ if __name__ == '__main__':
     num_params = format(sum(jax_array.size for jax_array in jax.tree_util.tree_flatten(params)[0]), ',')
     print(f'Learning rate {lr}')
     print(f'Batch size {batch_size}')
-    print(f'Number of parametes: {num_params}')
+    print(f'Number of learnable parameters: {num_params}')
     print(f'Training on {len(train_ds)} examples and {len(train_dl)} batches of size {batch_size}')
 
     # train
-    bar = tqdm(total = num_epochs * len(train_dl), ncols = 150, leave = True)
-    bar.colour = '0000ff'
-    for epoch in range(num_epochs):
-        bar.set_postfix(epoch = f'{epoch + 1} out of {num_epochs}')
-        epoch_loss = 0.0
-        for (batch_img, batch_label) in iter(train_dl):
-            batch_loss, params, opt_state = update(params, opt_state, jnp.array(batch_img), jnp.array(batch_label)) # batches need to be converted to jnp array
-            epoch_loss += batch_loss
-            bar.update(1)
-        # eval for each epoch
-        accuracies = [eval(params, jnp.array(x_batch), jnp.array(y_batch)) for (x_batch, y_batch) in iter(test_dl)]
-        tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {sum(accuracies)/len(accuracies)}')
+    trained_params = train_and_eval(params, opt_state, train_dl, test_dl, num_epochs)

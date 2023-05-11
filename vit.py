@@ -171,7 +171,7 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
         # eval for each epoch
         accuracy = eval_fn(params, test_dl)
         tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {accuracy}')
-
+    return params
 
 
 if __name__ == '__main__':
@@ -203,4 +203,4 @@ if __name__ == '__main__':
     print(f'Number of transformer heads: {n_heads}')
 
     # train
-    train_and_eval(params, opt_state, train_dl, test_dl, n_epochs=30)
+    trained_params = train_and_eval(params, opt_state, train_dl, test_dl, n_epochs=30)
