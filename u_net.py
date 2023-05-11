@@ -13,11 +13,10 @@ from tqdm import tqdm
 from load_data import LoadDataset
 
 
-def init_params():
+def init_params(initializer):
     master_key = random.PRNGKey(42)
     num_keys = 50
     keys = [random.PRNGKey(k) for k in random.randint(master_key, shape=(num_keys,), minval = -2**31, maxval = 2**31-1)]
-    initializer = nn.initializers.lecun_normal()
 
     params = {
         # contracting
@@ -78,7 +77,7 @@ def init_params():
 def batched_model(params, x):
 
     #------------------------------ contracting ------------------------------
-        
+
     x = activation(conv(x, params['conv1']['w'], (1, 1), 'VALID') + params['conv1']['b'])
     x = activation(conv(x, params['conv2']['w'], (1, 1), 'VALID') + params['conv2']['b'])
     y = jnp.copy(x)
@@ -146,6 +145,11 @@ def eval(params, x_batch, y_batch):
     return accuracy
 
 
+def eval_fn(params, data_loader):
+    accuracies = [eval(params, jnp.array(x_batch), jnp.array(y_batch)) for (x_batch, y_batch) in iter(data_loader)]
+    return sum(accuracies)/len(accuracies)
+
+
 def train_epoch(params, opt_state, data_loader, bar):
     epoch_loss = 0.0
     for (batch_img, batch_label) in iter(data_loader):
@@ -174,18 +178,20 @@ if __name__ == '__main__':
     num_epochs  = 30
     train_ratio = 0.8
     lr = 2e-5
+    img_dim = 64
 
     # get data
     sub_path = 'histopathologic-cancer-detection/'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=64, sample_fraction=0.2, augment=False)
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.2, augment=False)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5, pin_memory=True)
     test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5)
 
-     # init
-    params = init_params()
+    # init
+    initializer = nn.initializers.lecun_normal()
+    params = init_params(initializer)
     optimizer = optax.lion(learning_rate = lr)
     opt_state = optimizer.init(params)
     activation = relu6
