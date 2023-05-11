@@ -14,17 +14,17 @@ from load_data import LoadDataset
 
 
 # constants
-batch_size  = 512
+batch_size  = 1024
 train_ratio = 0.8
 img_dim = 96
 patch_size = 16
-n_layers = 1 # number of transformer layers
-n_heads = 2  # number of transformer heads
+n_layers = 3 # number of transformer layers
+n_heads = 3 # number of transformer heads
 num_tokens = (img_dim // patch_size) ** 2 + 1
 D = (patch_size ** 2) * 3
 d_k = D // n_heads
 d_v = D // n_heads
-lr = 0.001
+lr = 2e-5
 
 
 
@@ -88,7 +88,7 @@ def multihead_self_attention(x, W_Q, W_K, W_V, W_O):
 
 
 def mlp(x, W1, W2):
-    return gelu(jax.lax.dot(gelu(jax.lax.dot(x, W1)), W2))
+    return (jax.lax.dot(gelu(jax.lax.dot(x, W1)), W2))
 
 
 def transformer_block(params, z_l_minus_1, layer_idx):
@@ -159,7 +159,7 @@ def train_epoch(params, opt_state, data_loader, bar):
         batch_loss, params, opt_state = update(params, opt_state, x, y_true)
         epoch_loss += batch_loss
         bar.update(1)
-    return epoch_loss
+    return params, opt_state, epoch_loss
 
 
 def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
@@ -167,7 +167,7 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
     bar.colour = '#0000ff'
     for epoch in range(n_epochs):
         bar.set_postfix(epoch = f'{epoch + 1} out of {n_epochs}')
-        epoch_loss = train_epoch(params, opt_state, train_dl, bar)
+        params, opt_state, epoch_loss = train_epoch(params, opt_state, train_dl, bar)
         # eval for each epoch
         accuracy = eval_fn(params, test_dl)
         tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {accuracy}')
@@ -178,18 +178,18 @@ if __name__ == '__main__':
 
     # get data
     sub_path = 'histopathologic-cancer-detection/'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.8, augment=False)
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=1.0, augment=True)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, prefetch_factor=4)
-    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, prefetch_factor=4)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=20, prefetch_factor=10)
+    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=20, prefetch_factor=10)
 
 
     # init model
     initializer = nn.initializers.lecun_normal()
     params = init_params(initializer)
-    optimizer = optax.adam(learning_rate = lr)
+    optimizer = optax.lion(learning_rate = lr)
     opt_state = optimizer.init(params)
 
     # print constants
@@ -203,4 +203,4 @@ if __name__ == '__main__':
     print(f'Number of transformer heads: {n_heads}')
 
     # train
-    train_and_eval(params, opt_state, train_dl, test_dl, n_epochs=10)
+    train_and_eval(params, opt_state, train_dl, test_dl, n_epochs=30)
