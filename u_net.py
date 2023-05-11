@@ -13,6 +13,14 @@ from tqdm import tqdm
 from load_data import LoadDataset
 
 
+# constants
+batch_size  = 16
+num_epochs  = 30
+train_ratio = 0.8
+lr = 2e-5
+img_dim = 64
+
+
 def init_params(initializer):
     master_key = random.PRNGKey(42)
     num_keys = 50
@@ -173,13 +181,6 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
     return params
 
 if __name__ == '__main__':
-    # constants
-    batch_size  = 16
-    num_epochs  = 30
-    train_ratio = 0.8
-    lr = 2e-5
-    img_dim = 64
-
     # get data
     sub_path = 'histopathologic-cancer-detection/'
     ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.2, augment=False)
