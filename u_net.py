@@ -19,66 +19,156 @@ num_epochs  = 30
 train_ratio = 0.8
 lr = 2e-5
 img_dim = 64
+model_depth = 3
 
 
 def init_params(initializer):
-    master_key = random.PRNGKey(42)
-    num_keys = 50
-    keys = [random.PRNGKey(k) for k in random.randint(master_key, shape=(num_keys,), minval = -2**31, maxval = 2**31-1)]
+    master_key = random.PRNGKey(0)
+    num_keys = 100
+    keys = random.split(master_key, num=num_keys)
 
-    params = {
-        # contracting
+    # width and height at the bottom of the U
+    bottom_dim = (img_dim - 2 ** (model_depth + 2) + 4) // 2 ** (model_depth - 1)
+
+    # Note contracting and expanding are lists because we will use lax.scan()
+    # Every contracting layer has 2 conv layers
+    params = {}
+    params['contracting'] = [
+        {
+            'conv1': {
+                'w': initializer(
+                    keys[4 * i], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)
+                ),  # out_c, in_c, h, w
+                'b': initializer(
+                    keys[4 * i + 1],
+                    (
+                        2 ** (i + 6),
+                        (img_dim - 6 * 2 ** i + 4) // 2 ** i,
+                        (img_dim - 6 * 2 ** i + 4) // 2 ** i,
+                    ),
+                ),
+            },
+            'conv2': {
+                'w': initializer(keys[4 * i + 2], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
+                'b': initializer(
+                    keys[4 * i + 3],
+                    (
+                        2 ** (i + 6),
+                        (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
+                        (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
+                    ),
+                ),
+            },
+        }
+        for i in range(model_depth - 1)
+    ]
+
+    i = model_depth - 1
+    params['bottom'] = {
         'conv1': {
-            'w': initializer(keys[0], (64, 3, 3, 3)), # out_c, in_c, h, w
-            'b': initializer(keys[1], (64, 62, 62))
-        },'conv2': {
-            'w': initializer(keys[2], (64, 64, 3, 3)),
-            'b': initializer(keys[3], (64, 60, 60))
-        },'conv3': {
-            'w': initializer(keys[4], (128, 64, 3, 3)),
-            'b': initializer(keys[5], (128, 28, 28))
-        },'conv4': {
-            'w': initializer(keys[6], (128, 128, 3, 3)),
-            'b': initializer(keys[7], (128, 26, 26))
-        },'conv5': {
-            'w': initializer(keys[8], (256, 128, 3, 3)),
-            'b': initializer(keys[9], (256, 11, 11))
-        },'conv6': {
-            'w': initializer(keys[10], (256, 256, 3, 3)),
-            'b': initializer(keys[11], (256, 9, 9))
+            'w': initializer(
+                keys[4 * i], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)
+            ),  # out_c, in_c, h, w
+            'b': initializer(
+                keys[4 * i + 1],
+                (
+                    2 ** (i + 6),
+                    (img_dim - 6 * 2 ** i + 4) // 2 ** i,
+                    (img_dim - 6 * 2 ** i + 4) // 2 ** i,
+                ),
+            ),
         },
-        # expanding
-        'conv7': {
-            'w': initializer(keys[12], (128, 256, 2, 2)),
-            'b': initializer(keys[13], (128, 18, 18))
-        },'conv8': {
-            'w': initializer(keys[14], (128, 256, 3, 3)),
-            'b': initializer(keys[15], (128, 16, 16))
-        },'conv9': {
-            'w': initializer(keys[16], (128, 128, 3, 3)),
-            'b': initializer(keys[17], (128, 14, 14))
-        },'conv10': {
-            'w': initializer(keys[18], (64, 128, 2, 2)),
-            'b': initializer(keys[19], (64, 28, 28))
-        },'conv11': {
-            'w': initializer(keys[20], (64, 128, 3, 3)),
-            'b': initializer(keys[21], (64, 26, 26))
-        },'conv12': {
-            'w': initializer(keys[22], (64, 64, 3, 3)),
-            'b': initializer(keys[23], (64, 24, 24))
+        'conv2': {
+            'w': initializer(keys[4 * i + 2], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
+            'b': initializer(
+                keys[4 * i + 3],
+                (
+                    2 ** (i + 6),
+                    (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
+                    (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
+                ),
+            ),
         },
-        # last conv layer
-        'conv13': {
-            'w': initializer(keys[24], (2, 64, 1, 1)),
-            'b': initializer(keys[25], (2, 24, 24))
-        },'dense1': {
-            'w': initializer(keys[26], (1152, 512)),
-            'b': initializer(keys[27], (512, 1)).squeeze()
-        },'dense2': {
-            'w': initializer(keys[28], (512, 2)),
-            'b': initializer(keys[29], (2, 1)).squeeze()
+    }
+
+    # Every expanding layer has 3 conv layers
+    params['expanding'] = [
+        {
+            'conv1': {
+                'w': initializer(
+                    keys[model_depth + 4 * i],
+                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 2, 2),
+                ),
+                'b': initializer(
+                    keys[model_depth + 4 * i + 1],
+                    (
+                        2 ** (model_depth + 4 - i),
+                        2 ** i * (2 * bottom_dim - 8) + 8,
+                        2 ** i * (2 * bottom_dim - 8) + 8,
+                    ),
+                ),
+            },
+            'conv2': {
+                'w': initializer(
+                    keys[model_depth + 4 * i + 2],
+                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 3, 3),
+                ),
+                'b': initializer(
+                    keys[model_depth + 4 * i + 3],
+                    (
+                        2 ** (model_depth + 4 - i),
+                        2 ** i * (2 * bottom_dim - 8) + 6,
+                        2 ** i * (2 * bottom_dim - 8) + 6,
+                    ),
+                ),
+            },
+            'conv3': {
+                'w': initializer(
+                    keys[model_depth + 4 * i + 4],
+                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3),
+                ),
+                'b': initializer(
+                    keys[model_depth + 4 * i + 5],
+                    (
+                        2 ** (model_depth + 4 - i),
+                        2 ** i * (2 * bottom_dim - 8) + 4,
+                        2 ** i * (2 * bottom_dim - 8) + 4,
+                    ),
+                ),
+            },
+        }
+        for i in range(model_depth - 1)
+    ]
+
+    i = model_depth - 2
+    params['final_layers'] = {
+        'conv1': {
+            'w': initializer(
+                keys[model_depth + 4 * i + 6],
+                (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3),
+            ),
+            'b': initializer(
+                keys[model_depth + 4 * i + 7],
+                (
+                    2 ** (model_depth + 4 - i),
+                    2 ** i * (2 * bottom_dim() - 8) + 4,
+                    2 ** i * (2 * bottom_dim() - 8) + 4,
+                ),
+            ),
+        },
+        'dense1': {
+            'w': initializer(
+                keys[model_depth + 4 * i + 8],
+                (2 ** (model_depth + 4 - i) * (2 * bottom_dim() - 8) ** 2, 512),
+            ),
+            'b': initializer(keys[model_depth + 4 * i + 9], (512, 1)).squeeze()
+        },
+        'dense2': {
+            'w': initializer(keys[model_depth + 4 * i + 10], (512, 2)),
+            'b': initializer(keys[model_depth + 4 * i + 11], (2, 1)).squeeze()
         }
     }
+
     return params
 
 
@@ -89,13 +179,14 @@ def batched_model(params, x):
     x = activation(conv(x, params['conv1']['w'], (1, 1), 'VALID') + params['conv1']['b'])
     x = activation(conv(x, params['conv2']['w'], (1, 1), 'VALID') + params['conv2']['b'])
     y = jnp.copy(x)
-    x = hk.max_pool(value = x, window_shape = (2, 2), strides=(2, 2), padding='VALID')
+    x = hk.max_pool(value = x, window_shape=(2, 2), strides=(2, 2), padding='VALID')
 
     x = activation(conv(x, params['conv3']['w'], (1, 1), 'VALID') + params['conv3']['b'])
     x = activation(conv(x, params['conv4']['w'], (1, 1), 'VALID') + params['conv4']['b'])
     z = jnp.copy(x)
-    x = hk.max_pool(value = x, window_shape = (2, 2), strides=(2, 2), padding='VALID')
+    x = hk.max_pool(value = x, window_shape=(2, 2), strides=(2, 2), padding='VALID')
 
+    # bottom layers
     x = activation(conv(x, params['conv5']['w'], (1, 1), 'VALID') + params['conv5']['b'])
     x = activation(conv(x, params['conv6']['w'], (1, 1), 'VALID') + params['conv6']['b'])
 
@@ -182,7 +273,7 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
 
 if __name__ == '__main__':
     # get data
-    sub_path = 'histopathologic-cancer-detection/'
+    sub_path = 'datasets/histopathologic-cancer-detection/'
     ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.2, augment=False)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train

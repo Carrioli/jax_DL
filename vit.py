@@ -29,9 +29,9 @@ lr = 2e-5
 
 
 def init_params(initializer):
-    master_key = random.PRNGKey(42)
-    num_keys = 30
-    keys = [random.PRNGKey(k) for k in random.randint(master_key, shape=(num_keys,), minval = -2**31, maxval = 2**31-1)]
+    master_key = random.PRNGKey(0)
+    num_keys = 50
+    keys = random.split(master_key, num=num_keys)
     params = {
         'dense1': {
             'w': initializer(keys[0], (D, D)),
@@ -177,7 +177,7 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
 if __name__ == '__main__':
 
     # get data
-    sub_path = 'histopathologic-cancer-detection/'
+    sub_path = 'datasets/histopathologic-cancer-detection/'
     ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=1.0, augment=True)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
