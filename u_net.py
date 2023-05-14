@@ -4,10 +4,10 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import optax
-from jax import grad, jit, nn, random, value_and_grad, vmap
+from jax import lax, nn, random, value_and_grad
 from jax.lax import conv, conv_transpose
 from jax.nn import relu, relu6, selu
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 from load_data import LoadDataset
@@ -41,7 +41,6 @@ def init_params(initializer):
 
     k = PostIncrement()
 
-    # Note contracting and expanding are lists because we will use lax.scan()
     # Every contracting layer has 2 conv layers
     params = {}
     params['contracting'] = [
@@ -73,7 +72,7 @@ def init_params(initializer):
     i = model_depth - 1
     params['bottom'] = {
         'conv1': {
-            'w': initializer(keys[k.increment()], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)),  # out_c, in_c, h, w
+            'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 5), 3, 3)),
             'b': initializer(keys[k.increment()],
                 (
                     2 ** (i + 6),
@@ -153,40 +152,36 @@ def init_params(initializer):
             'b': initializer(keys[k.increment()], (2, 1)).squeeze()
         }
     }
-
     return params
 
 
-def contracting_layer(params, x, ys, depth):
-    w1 = params['contracting'][depth]['conv1']['w']
-    b1 = params['contracting'][depth]['conv1']['b']
-    w2 = params['contracting'][depth]['conv2']['w']
-    b2 = params['contracting'][depth]['conv2']['b']
+def contracting_layer(layer_params, x):
+    w1 = layer_params['conv1']['w']
+    b1 = layer_params['conv1']['b']
+    w2 = layer_params['conv2']['w']
+    b2 = layer_params['conv2']['b']
 
     x = activation(conv(x, w1, (1, 1), 'VALID') + b1)
     x = activation(conv(x, w2, (1, 1), 'VALID') + b2)
 
-    ys[depth] = jnp.copy(x)
+    y = jnp.copy(x)
 
     x = hk.max_pool(value = x, window_shape=(2, 2), strides=(2, 2), padding='VALID')
-    return x, ys
+    return x, y
 
 
-def expanding_layer(params, x, ys, depth):
-    i = model_depth - 2 - depth
-    # Expanding params are saved in reverse order inside params['expanding']
-    w1 = params['expanding'][i]['conv1']['w']
-    b1 = params['expanding'][i]['conv1']['b']
-    w2 = params['expanding'][i]['conv2']['w']
-    b2 = params['expanding'][i]['conv2']['b']
-    w3 = params['expanding'][i]['conv3']['w']
-    b3 = params['expanding'][i]['conv3']['b']
+def expanding_layer(layer_params, x, y):
+    w1 = layer_params['conv1']['w']
+    b1 = layer_params['conv1']['b']
+    w2 = layer_params['conv2']['w']
+    b2 = layer_params['conv2']['b']
+    w3 = layer_params['conv3']['w']
+    b3 = layer_params['conv3']['b']
 
     # Expansion
     x = conv_transpose(x, w1, (2, 2), 'VALID', dimension_numbers=('NCHW', 'OIHW', 'NCHW')) + b1
 
     # Concatenate
-    y = ys[depth]
     start = (y.shape[-1] - x.shape[-1]) // 2
     end   = start + x.shape[-1]
     x = jnp.concatenate((x, y[:,:,start:end,start:end]), axis = 1)
@@ -198,29 +193,29 @@ def expanding_layer(params, x, ys, depth):
 
 
 def batched_model(params, x):
-
     #------------------------------ contracting ------------------------------
     ys = [None] * (model_depth - 1)
-    for depth in range(model_depth - 1):
-        x, ys = contracting_layer(params, x, ys, depth)
+    for i, layer_params in enumerate(params['contracting']):
+        x, ys[model_depth - 2 - i] = contracting_layer(layer_params, x) # ys are saved in reversed order
 
     # bottom layers
     x = activation(conv(x, params['bottom']['conv1']['w'], (1, 1), 'VALID') + params['bottom']['conv1']['b'])
     x = activation(conv(x, params['bottom']['conv2']['w'], (1, 1), 'VALID') + params['bottom']['conv2']['b'])
 
     #------------------------------ expanding ------------------------------
-    for depth in range(model_depth - 2, -1, -1):
-        x = expanding_layer(params, x, ys, depth)
+    for y, layer_params in zip(ys, params['expanding']):
+        x = expanding_layer(layer_params, x, y)
 
-    # last conv layer
+    # last conv layer reduces to 2 channels
     x = conv(x, params['final_layers']['conv1']['w'], (1, 1), 'VALID') + params['final_layers']['conv1']['b']
 
+    #------------------------------ classification head ------------------------------
     # flatten
     x = jnp.reshape(x, (x.shape[0], -1))
 
     # linear
-    x = activation(x @ params['final_layers']['dense1']['w'] + params['final_layers']['dense1']['b'])
-    x = x @ params['final_layers']['dense2']['w'] + params['final_layers']['dense2']['b']
+    x = activation(lax.dot(x, params['final_layers']['dense1']['w']) + params['final_layers']['dense1']['b'])
+    x = activation(lax.dot(x, params['final_layers']['dense2']['w']) + params['final_layers']['dense2']['b'])
     x = nn.log_softmax(x)
     return x
 

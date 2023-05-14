@@ -3,10 +3,9 @@ import jax
 import jax.numpy as jnp
 import jax.tree_util
 import optax
-from jax import grad, jit, lax, nn, random, value_and_grad, vmap
+from jax import lax, nn, random, value_and_grad, vmap
 from jax.nn import gelu, relu, relu6, selu, standardize
-from optax import lion
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 from load_data import LoadDataset
@@ -30,14 +29,14 @@ lr = 2e-5
 
 def init_params(initializer):
     master_key = random.PRNGKey(0)
-    num_keys = 50
+    num_keys = 100
     keys = random.split(master_key, num=num_keys)
     params = {
         'dense1': {
             'w': initializer(keys[0], (D, D)),
-            'b': jax.lax.squeeze(initializer(keys[1], (D, 1)), dimensions=(1,)) # initialized as 2D because of initializer, then squeeze
+            'b': lax.squeeze(initializer(keys[1], (D, 1)), dimensions=(1,)) # initialized as 2D because of initializer, then squeeze
             },
-        'cls_token': jax.lax.squeeze(initializer(keys[2], (D, 1)), dimensions=(1,)),
+        'cls_token': lax.squeeze(initializer(keys[2], (D, 1)), dimensions=(1,)),
         'position_embeddings': initializer(keys[3], (num_tokens, D)),
         'transformer_block': {
             'W_Q':  initializer(keys[4], (n_layers, n_heads, D, d_k)),
@@ -50,11 +49,11 @@ def init_params(initializer):
         'mlp_head': {
             'dense1': {
                 'w': initializer(keys[10], (D, D)),
-                'b': jax.lax.squeeze(initializer(keys[11], (D, 1)), dimensions=(1,))
+                'b': lax.squeeze(initializer(keys[11], (D, 1)), dimensions=(1,))
             },
             'dense2': {
                 'w': initializer(keys[12], (D, 2)),
-                'b': jax.lax.squeeze(initializer(keys[13], (2, 1)), dimensions=(1,))
+                'b': lax.squeeze(initializer(keys[13], (2, 1)), dimensions=(1,))
             }
         }
     }
@@ -64,31 +63,31 @@ def init_params(initializer):
 def extract_patches(x):
     C, H, W = x.shape
     x = x.reshape(C, H // patch_size, patch_size, W // patch_size, patch_size)
-    x = jax.lax.transpose(x, permutation=(1, 3, 0, 2, 4))
+    x = lax.transpose(x, permutation=(1, 3, 0, 2, 4))
     patches = x.reshape(-1, C * patch_size * patch_size)
     return patches
 
 
 def singlehead_self_attention(x, W_Q, W_K, W_V):
-    Q = jax.lax.dot(x, W_Q)
-    K = jax.lax.dot(x, W_K)
-    V = jax.lax.dot(x, W_V)
+    Q = lax.dot(x, W_Q)
+    K = lax.dot(x, W_K)
+    V = lax.dot(x, W_V)
     d_k = W_Q.shape[-1]
-    scores = jax.lax.dot(Q, jax.lax.transpose(K, permutation=(1, 0))) / jnp.sqrt(d_k)
+    scores = lax.dot(Q, lax.transpose(K, permutation=(1, 0))) / jnp.sqrt(d_k)
     attention_weights = jax.nn.softmax(scores, axis=-1)
-    return jax.lax.dot(attention_weights, V)
+    return lax.dot(attention_weights, V)
 
 
 def multihead_self_attention(x, W_Q, W_K, W_V, W_O):
     # get all the heades, concatenate them, and then apply the final linear layer
-    x = jax.vmap(singlehead_self_attention, in_axes=[None, 0, 0, 0])(x, W_Q, W_K, W_V)
+    x = vmap(singlehead_self_attention, in_axes=[None, 0, 0, 0])(x, W_Q, W_K, W_V)
     # concatenate the heads so that x has shape (x.shape[0]*x.shape[1], x.shape[2])
     x = x.reshape(x.shape[1], -1)
-    return jax.lax.dot(x, W_O)
+    return lax.dot(x, W_O)
 
 
 def mlp(x, W1, W2):
-    return (jax.lax.dot(gelu(jax.lax.dot(x, W1)), W2))
+    return (lax.dot(gelu(lax.dot(x, W1)), W2))
 
 
 def transformer_block(params, z_l_minus_1, layer_idx):
@@ -106,23 +105,23 @@ def transformer_block(params, z_l_minus_1, layer_idx):
 
 def model(params, x):
     x = extract_patches(x)
-    x = jax.lax.dot(x, params['dense1']['w']) + params['dense1']['b']
+    x = lax.dot(x, params['dense1']['w']) + params['dense1']['b']
     # Tokenization: Add the classification token
     x = jnp.concatenate((params['cls_token'][jnp.newaxis, :], x), axis=0)
     # Add learable positional encoding
     x += params['position_embeddings']
 
-    final_carry, _ = jax.lax.scan(lambda carry, indx: transformer_block(params, carry, indx), x, jnp.arange(n_layers))
+    final_carry, _ = lax.scan(lambda carry, indx: transformer_block(params, carry, indx), x, jnp.arange(n_layers))
 
     cls_token = final_carry[0]
 
-    x = jax.lax.dot(cls_token, params['mlp_head']['dense1']['w']) + params['mlp_head']['dense1']['b']
-    x = jax.lax.dot(x, params['mlp_head']['dense2']['w']) + params['mlp_head']['dense2']['b']
+    x = lax.dot(cls_token, params['mlp_head']['dense1']['w']) + params['mlp_head']['dense1']['b']
+    x = lax.dot(x, params['mlp_head']['dense2']['w']) + params['mlp_head']['dense2']['b']
     return x
 
 
 def batched_model(params, x):
-    return jax.vmap(model, in_axes=(None, 0))(params, x)
+    return vmap(model, in_axes=(None, 0))(params, x)
 
 
 def batched_softmax_cross_entropy(params, x, y_true):
