@@ -112,7 +112,7 @@ def model(params, x):
     # Add learable positional encoding
     x += params['position_embeddings']
 
-    final_carry, _ = jax.lax.scan(lambda carry, x: transformer_block(params, carry, x), x, jnp.arange(n_layers))
+    final_carry, _ = jax.lax.scan(lambda carry, indx: transformer_block(params, carry, indx), x, jnp.arange(n_layers))
 
     cls_token = final_carry[0]
 
@@ -178,12 +178,12 @@ if __name__ == '__main__':
 
     # get data
     sub_path = 'datasets/histopathologic-cancer-detection/'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=1.0, augment=True)
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=.01, augment=True)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=20, prefetch_factor=10)
-    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=20, prefetch_factor=10)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2, prefetch_factor=1)
+    test_dl  = DataLoader(test_ds , batch_size=batch_size, shuffle=True, drop_last=True, num_workers=2, prefetch_factor=1)
 
 
     # init model

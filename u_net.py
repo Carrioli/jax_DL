@@ -18,8 +18,17 @@ batch_size  = 16
 num_epochs  = 30
 train_ratio = 0.8
 lr = 2e-5
-img_dim = 64
-model_depth = 3
+img_dim = 96
+model_depth = 4
+
+class PostIncrement:
+    def __init__(self, value=0):
+        self.value = value
+
+    def increment(self):
+        temp = self.value
+        self.value += 1
+        return temp
 
 
 def init_params(initializer):
@@ -30,35 +39,33 @@ def init_params(initializer):
     # width and height at the bottom of the U
     bottom_dim = (img_dim - 2 ** (model_depth + 2) + 4) // 2 ** (model_depth - 1)
 
+    k = PostIncrement()
+
     # Note contracting and expanding are lists because we will use lax.scan()
     # Every contracting layer has 2 conv layers
     params = {}
     params['contracting'] = [
         {
             'conv1': {
-                'w': initializer(
-                    keys[4 * i], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)
-                ),  # out_c, in_c, h, w
-                'b': initializer(
-                    keys[4 * i + 1],
+                'w': initializer(keys[k.increment()], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)),  # out_c, in_c, h, w
+                'b': initializer(keys[k.increment()],
                     (
                         2 ** (i + 6),
                         (img_dim - 6 * 2 ** i + 4) // 2 ** i,
                         (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                    ),
-                ),
+                    )
+                )
             },
             'conv2': {
-                'w': initializer(keys[4 * i + 2], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
-                'b': initializer(
-                    keys[4 * i + 3],
+                'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
+                'b': initializer(keys[k.increment()],
                     (
                         2 ** (i + 6),
                         (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
                         (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                    ),
-                ),
-            },
+                    )
+                )
+            }
         }
         for i in range(model_depth - 1)
     ]
@@ -66,76 +73,60 @@ def init_params(initializer):
     i = model_depth - 1
     params['bottom'] = {
         'conv1': {
-            'w': initializer(
-                keys[4 * i], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)
-            ),  # out_c, in_c, h, w
-            'b': initializer(
-                keys[4 * i + 1],
+            'w': initializer(keys[k.increment()], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)),  # out_c, in_c, h, w
+            'b': initializer(keys[k.increment()],
                 (
                     2 ** (i + 6),
                     (img_dim - 6 * 2 ** i + 4) // 2 ** i,
                     (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                ),
-            ),
+                )
+            )
         },
         'conv2': {
-            'w': initializer(keys[4 * i + 2], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
-            'b': initializer(
-                keys[4 * i + 3],
+            'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
+            'b': initializer(keys[k.increment()],
                 (
                     2 ** (i + 6),
                     (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
                     (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                ),
-            ),
-        },
+                )
+            )
+        }
     }
 
     # Every expanding layer has 3 conv layers
     params['expanding'] = [
         {
             'conv1': {
-                'w': initializer(
-                    keys[model_depth + 4 * i],
-                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 2, 2),
-                ),
-                'b': initializer(
-                    keys[model_depth + 4 * i + 1],
+                'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 2, 2)),
+                'b': initializer(keys[k.increment()],
                     (
                         2 ** (model_depth + 4 - i),
                         2 ** i * (2 * bottom_dim - 8) + 8,
                         2 ** i * (2 * bottom_dim - 8) + 8,
-                    ),
-                ),
+                    )
+                )
             },
             'conv2': {
-                'w': initializer(
-                    keys[model_depth + 4 * i + 2],
-                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 3, 3),
-                ),
-                'b': initializer(
-                    keys[model_depth + 4 * i + 3],
+                'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 3, 3)),
+                'b': initializer(keys[k.increment()],
                     (
                         2 ** (model_depth + 4 - i),
                         2 ** i * (2 * bottom_dim - 8) + 6,
                         2 ** i * (2 * bottom_dim - 8) + 6,
-                    ),
-                ),
+                    )
+                )
             },
             'conv3': {
-                'w': initializer(
-                    keys[model_depth + 4 * i + 4],
-                    (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3),
-                ),
-                'b': initializer(
-                    keys[model_depth + 4 * i + 5],
+                'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3)),
+                'b': initializer(keys[k.increment()],
                     (
                         2 ** (model_depth + 4 - i),
                         2 ** i * (2 * bottom_dim - 8) + 4,
                         2 ** i * (2 * bottom_dim - 8) + 4,
-                    ),
-                ),
-            },
+                    )
+                )
+            }
         }
         for i in range(model_depth - 1)
     ]
@@ -143,84 +134,93 @@ def init_params(initializer):
     i = model_depth - 2
     params['final_layers'] = {
         'conv1': {
-            'w': initializer(
-                keys[model_depth + 4 * i + 6],
-                (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3),
-            ),
-            'b': initializer(
-                keys[model_depth + 4 * i + 7],
+            'w': initializer(keys[k.increment()], (2, 2 ** (model_depth + 4 - i), 1, 1)),
+            'b': initializer(keys[k.increment()],
                 (
-                    2 ** (model_depth + 4 - i),
-                    2 ** i * (2 * bottom_dim() - 8) + 4,
-                    2 ** i * (2 * bottom_dim() - 8) + 4,
-                ),
-            ),
+                    2,
+                    2 ** i * (2 * bottom_dim - 8) + 4,
+                    2 ** i * (2 * bottom_dim - 8) + 4,
+                )
+            )
         },
         'dense1': {
-            'w': initializer(
-                keys[model_depth + 4 * i + 8],
-                (2 ** (model_depth + 4 - i) * (2 * bottom_dim() - 8) ** 2, 512),
-            ),
-            'b': initializer(keys[model_depth + 4 * i + 9], (512, 1)).squeeze()
+            'w': initializer(keys[k.increment()],
+                (2 * (2 ** i * (2 * bottom_dim - 8) + 4)**2, 512)),
+            'b': initializer(keys[k.increment()], (512, 1)).squeeze()
         },
         'dense2': {
-            'w': initializer(keys[model_depth + 4 * i + 10], (512, 2)),
-            'b': initializer(keys[model_depth + 4 * i + 11], (2, 1)).squeeze()
+            'w': initializer(keys[k.increment()], (512, 2)),
+            'b': initializer(keys[k.increment()], (2, 1)).squeeze()
         }
     }
 
     return params
 
 
-def batched_model(params, x):
+def contracting_layer(params, x, ys, depth):
+    w1 = params['contracting'][depth]['conv1']['w']
+    b1 = params['contracting'][depth]['conv1']['b']
+    w2 = params['contracting'][depth]['conv2']['w']
+    b2 = params['contracting'][depth]['conv2']['b']
 
-    #------------------------------ contracting ------------------------------
+    x = activation(conv(x, w1, (1, 1), 'VALID') + b1)
+    x = activation(conv(x, w2, (1, 1), 'VALID') + b2)
 
-    x = activation(conv(x, params['conv1']['w'], (1, 1), 'VALID') + params['conv1']['b'])
-    x = activation(conv(x, params['conv2']['w'], (1, 1), 'VALID') + params['conv2']['b'])
-    y = jnp.copy(x)
+    ys[depth] = jnp.copy(x)
+
     x = hk.max_pool(value = x, window_shape=(2, 2), strides=(2, 2), padding='VALID')
-
-    x = activation(conv(x, params['conv3']['w'], (1, 1), 'VALID') + params['conv3']['b'])
-    x = activation(conv(x, params['conv4']['w'], (1, 1), 'VALID') + params['conv4']['b'])
-    z = jnp.copy(x)
-    x = hk.max_pool(value = x, window_shape=(2, 2), strides=(2, 2), padding='VALID')
-
-    # bottom layers
-    x = activation(conv(x, params['conv5']['w'], (1, 1), 'VALID') + params['conv5']['b'])
-    x = activation(conv(x, params['conv6']['w'], (1, 1), 'VALID') + params['conv6']['b'])
+    return x, ys
 
 
-    #------------------------------ expanding ------------------------------
+def expanding_layer(params, x, ys, depth):
+    i = model_depth - 2 - depth
+    # Expanding params are saved in reverse order inside params['expanding']
+    w1 = params['expanding'][i]['conv1']['w']
+    b1 = params['expanding'][i]['conv1']['b']
+    w2 = params['expanding'][i]['conv2']['w']
+    b2 = params['expanding'][i]['conv2']['b']
+    w3 = params['expanding'][i]['conv3']['w']
+    b3 = params['expanding'][i]['conv3']['b']
 
-    # Expansion 1
-    # Upsample
-    x = conv_transpose(x, params['conv7']['w'], (2, 2), 'VALID', dimension_numbers=('NCHW', 'OIHW', 'NCHW')) + params['conv7']['b']
+    # Expansion
+    x = conv_transpose(x, w1, (2, 2), 'VALID', dimension_numbers=('NCHW', 'OIHW', 'NCHW')) + b1
+
     # Concatenate
-    start = (z.shape[-1] - x.shape[-1]) // 2
-    end   = start + x.shape[-1]
-    x = jnp.concatenate((x, z[:,:,start:end,start:end]), axis = 1)
-    # 2, 3x3 convolutions + activation
-    x = activation(conv(x, params['conv8']['w'], (1, 1), 'VALID') + params['conv8']['b'])
-    x = activation(conv(x, params['conv9']['w'], (1, 1), 'VALID') + params['conv9']['b'])
-    
-    # Expansion 2
-    x = conv_transpose(x, params['conv10']['w'], (2, 2), 'VALID', dimension_numbers=('NCHW', 'OIHW', 'NCHW')) + params['conv10']['b']
+    y = ys[depth]
     start = (y.shape[-1] - x.shape[-1]) // 2
     end   = start + x.shape[-1]
     x = jnp.concatenate((x, y[:,:,start:end,start:end]), axis = 1)
-    x = activation(conv(x, params['conv11']['w'], (1, 1), 'VALID') + params['conv11']['b'])
-    x = activation(conv(x, params['conv12']['w'], (1, 1), 'VALID') + params['conv12']['b'])
+
+    x = activation(conv(x, w2, (1, 1), 'VALID') + b2)
+    x = activation(conv(x, w3, (1, 1), 'VALID') + b3)
+
+    return x
+
+
+def batched_model(params, x):
+
+    #------------------------------ contracting ------------------------------
+    ys = [None] * (model_depth - 1)
+    for depth in range(model_depth - 1):
+        x, ys = contracting_layer(params, x, ys, depth)
+
+    # bottom layers
+    x = activation(conv(x, params['bottom']['conv1']['w'], (1, 1), 'VALID') + params['bottom']['conv1']['b'])
+    x = activation(conv(x, params['bottom']['conv2']['w'], (1, 1), 'VALID') + params['bottom']['conv2']['b'])
+
+    #------------------------------ expanding ------------------------------
+    for depth in range(model_depth - 2, -1, -1):
+        x = expanding_layer(params, x, ys, depth)
 
     # last conv layer
-    x = conv(x, params['conv13']['w'], (1, 1), 'VALID') + params['conv13']['b']
+    x = conv(x, params['final_layers']['conv1']['w'], (1, 1), 'VALID') + params['final_layers']['conv1']['b']
 
     # flatten
     x = jnp.reshape(x, (x.shape[0], -1))
 
     # linear
-    x = relu(x @ params['dense1']['w'] + params['dense1']['b'])
-    x = x @ params['dense2']['w'] + params['dense2']['b']
+    x = activation(x @ params['final_layers']['dense1']['w'] + params['final_layers']['dense1']['b'])
+    x = x @ params['final_layers']['dense2']['w'] + params['final_layers']['dense2']['b']
     x = nn.log_softmax(x)
     return x
 
@@ -230,12 +230,14 @@ def batched_loss_f(params, x, y_true):
     y_true_one_hot = nn.one_hot(y_true, num_classes = 2, dtype = int)
     return optax.softmax_cross_entropy(logits = y_pred, labels = y_true_one_hot).mean() # loss is already vectorized 
 
+
 @jax.jit
 def update(params, opt_state, x, y_true):
     loss, grads = value_and_grad(batched_loss_f, argnums = 0)(params, x, y_true)
     updates, new_opt_state = optimizer.update(grads, opt_state, params)
     new_params = optax.apply_updates(params, updates)
     return loss, new_params, new_opt_state
+
 
 @jax.jit
 def eval(params, x_batch, y_batch):
@@ -271,15 +273,16 @@ def train_and_eval(params, opt_state, train_dl, test_dl, n_epochs):
         tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {accuracy}')
     return params
 
+
 if __name__ == '__main__':
     # get data
     sub_path = 'datasets/histopathologic-cancer-detection/'
-    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.2, augment=False)
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.02, augment=False)
     num_train = int(train_ratio*len(ds))
     num_test = len(ds) - num_train
     train_ds, test_ds = random_split(ds, [num_train, num_test])
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5, pin_memory=True)
-    test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=6, prefetch_factor=5)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=5, prefetch_factor=5, pin_memory=True)
+    test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=1, prefetch_factor=1)
 
     # init
     initializer = nn.initializers.lecun_normal()
