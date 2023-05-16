@@ -47,49 +47,24 @@ def init_params(initializer):
         {
             'conv1': {
                 'w': initializer(keys[k.increment()], (2 ** (i + 6), 3 if i == 0 else 2 ** (i + 5), 3, 3)),  # out_c, in_c, h, w
-                'b': initializer(keys[k.increment()],
-                    (
-                        2 ** (i + 6),
-                        (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                        (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                    )
-                )
+                'b': initializer(keys[k.increment()], (2 ** (i + 6), 1)).squeeze()
             },
             'conv2': {
                 'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
-                'b': initializer(keys[k.increment()],
-                    (
-                        2 ** (i + 6),
-                        (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                        (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                    )
-                )
+                'b': initializer(keys[k.increment()], (2 ** (i + 6), 1)).squeeze()
             }
         }
         for i in range(model_depth - 1)
     ]
 
-    i = model_depth - 1
     params['bottom'] = {
         'conv1': {
-            'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 5), 3, 3)),
-            'b': initializer(keys[k.increment()],
-                (
-                    2 ** (i + 6),
-                    (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                    (img_dim - 6 * 2 ** i + 4) // 2 ** i,
-                )
-            )
+            'w': initializer(keys[k.increment()], (2 ** (model_depth + 5), 2 ** (i + 5), 3, 3)),
+            'b': initializer(keys[k.increment()], (2 ** (model_depth + 5), 1)).squeeze()
         },
         'conv2': {
             'w': initializer(keys[k.increment()], (2 ** (i + 6), 2 ** (i + 6), 3, 3)),
-            'b': initializer(keys[k.increment()],
-                (
-                    2 ** (i + 6),
-                    (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                    (img_dim - 2 ** (i + 3) + 4) // 2 ** i,
-                )
-            )
+            'b': initializer(keys[k.increment()], (2 ** (i + 6), 1)).squeeze()
         }
     }
 
@@ -98,33 +73,15 @@ def init_params(initializer):
         {
             'conv1': {
                 'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 2, 2)),
-                'b': initializer(keys[k.increment()],
-                    (
-                        2 ** (model_depth + 4 - i),
-                        2 ** i * (2 * bottom_dim - 8) + 8,
-                        2 ** i * (2 * bottom_dim - 8) + 8,
-                    )
-                )
+                'b': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 1)).squeeze()
             },
             'conv2': {
                 'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 5 - i), 3, 3)),
-                'b': initializer(keys[k.increment()],
-                    (
-                        2 ** (model_depth + 4 - i),
-                        2 ** i * (2 * bottom_dim - 8) + 6,
-                        2 ** i * (2 * bottom_dim - 8) + 6,
-                    )
-                )
+                'b': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 1)).squeeze()
             },
             'conv3': {
                 'w': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 2 ** (model_depth + 4 - i), 3, 3)),
-                'b': initializer(keys[k.increment()],
-                    (
-                        2 ** (model_depth + 4 - i),
-                        2 ** i * (2 * bottom_dim - 8) + 4,
-                        2 ** i * (2 * bottom_dim - 8) + 4,
-                    )
-                )
+                'b': initializer(keys[k.increment()], (2 ** (model_depth + 4 - i), 1)).squeeze()
             }
         }
         for i in range(model_depth - 1)
@@ -134,17 +91,10 @@ def init_params(initializer):
     params['final_layers'] = {
         'conv1': {
             'w': initializer(keys[k.increment()], (2, 2 ** (model_depth + 4 - i), 1, 1)),
-            'b': initializer(keys[k.increment()],
-                (
-                    2,
-                    2 ** i * (2 * bottom_dim - 8) + 4,
-                    2 ** i * (2 * bottom_dim - 8) + 4,
-                )
-            )
+            'b': initializer(keys[k.increment()], (2, 1)).squeeze()
         },
         'dense1': {
-            'w': initializer(keys[k.increment()],
-                (2 * (2 ** i * (2 * bottom_dim - 8) + 4)**2, 512)),
+            'w': initializer(keys[k.increment()], (2 * (2 ** i * (2 * bottom_dim - 8) + 4)**2, 512)),
             'b': initializer(keys[k.increment()], (512, 1)).squeeze()
         },
         'dense2': {
