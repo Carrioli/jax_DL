@@ -67,9 +67,9 @@ batch_size  = 16
 num_epochs  = 30
 train_ratio = 0.8
 lr = 2e-5
-img_dim = 96
+img_dim = 64
 
-model = Unet(model_depth = 4, img_dim = img_dim)
+model = Unet(model_depth = 3, img_dim = img_dim)
 params = model.init(jax.random.PRNGKey(0), jnp.ones((batch_size, img_dim, img_dim, 3)))
 num_params = format(sum(jax_array.size for jax_array in jax.tree_util.tree_flatten(params)[0]), ',')
 

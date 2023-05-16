@@ -18,8 +18,8 @@ batch_size  = 16
 num_epochs  = 30
 train_ratio = 0.8
 lr = 2e-5
-img_dim = 96
-model_depth = 4
+img_dim = 63
+model_depth = 3
 
 class PostIncrement:
     def __init__(self, value=0):
