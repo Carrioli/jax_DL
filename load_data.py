@@ -1,11 +1,10 @@
-from torch import stack
 import os
+
 import pandas as pd
-from torch.utils.data import DataLoader, Dataset, random_split
 import torchvision.transforms as T
 from PIL import Image
-import pandas as pd
-from random import sample
+from torch import stack
+from torch.utils.data import Dataset
 
 
 class D4Augmentation:
@@ -25,20 +24,19 @@ class D4Augmentation:
 
 class LoadDataset(Dataset):
 
-    def __init__(self, data_folder, labels_path, dimension, sample_fraction=1.0, augment=False):
+    def __init__(self, data_folder, labels_path, dimension, sample_fraction=1.0, augment=False, channels_last=False):
+
         assert 0.0 <= sample_fraction <= 1.0, 'Sample fraction must be between 0.0 and 1.0'
 
         self.data_folder = data_folder
         self.dict_labels = pd.read_csv(labels_path).set_index('id')['label'].to_dict()
         self.sample_fraction = sample_fraction
         self.augment = augment
-
         num_samples = int(len(self.dict_labels) * self.sample_fraction)
         self.image_files = list(self.dict_labels.keys())[:num_samples]
-        
-
         self.transform = T.Compose([T.CenterCrop(dimension),
                                     T.ToTensor()])
+        self.channels_last = channels_last
 
 
     def __len__(self):
@@ -65,18 +63,8 @@ class LoadDataset(Dataset):
 
         label = self.dict_labels[image_file]
 
+        if self.channels_last:
+            image = image.permute(1, 2, 0)
+
         return image, label
 
-
-
-# sub_path = 'histopathologic-cancer-detection/'
-# ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', sample_fraction=0.1, augment=True)
-# num_train = int(0.8*len(ds))
-# num_test = len(ds) - num_train
-# train_ds, test_ds = random_split(ds, [num_train, num_test])
-# train_dl = DataLoader(train_ds, batch_size=100, shuffle=True, drop_last=True)
-# test_dl = DataLoader(test_ds, batch_size=100, shuffle=True, drop_last=True)
-
-
-# for (batch_img, batch_label) in iter(dl):
-#     print()

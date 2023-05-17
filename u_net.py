@@ -12,13 +12,12 @@ from tqdm import tqdm
 
 from load_data import LoadDataset
 
-
 # constants
 batch_size  = 16
 num_epochs  = 30
 train_ratio = 0.8
 lr = 2e-5
-img_dim = 63
+img_dim = 64
 model_depth = 3
 
 class PostIncrement:
@@ -87,14 +86,13 @@ def init_params(initializer):
         for i in range(model_depth - 1)
     ]
 
-    i = model_depth - 2
     params['final_layers'] = {
         'conv1': {
-            'w': initializer(keys[k.increment()], (2, 2 ** (model_depth + 4 - i), 1, 1)),
+            'w': initializer(keys[k.increment()], (2, 2 ** 6, 1, 1)),
             'b': initializer(keys[k.increment()], (1, 2, 1, 1))
         },
         'dense1': {
-            'w': initializer(keys[k.increment()], (2 * (2 ** i * (2 * bottom_dim - 8) + 4)**2, 512)),
+            'w': initializer(keys[k.increment()], (2 * (2 ** (model_depth - 2) * (2 * bottom_dim - 8) + 4)**2, 512)),
             'b': initializer(keys[k.increment()], (512, 1)).squeeze()
         },
         'dense2': {

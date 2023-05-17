@@ -1,14 +1,21 @@
-import jax
-import jax.numpy as jnp
-from flax import linen as nn
 from typing import Callable
 
+import jax
+import jax.numpy as jnp
+import optax
+from flax import linen as nn
+from flax.training.train_state import TrainState
+from jax import lax, random, value_and_grad
+from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm
+
+from load_data import LoadDataset
 
 
 class Unet(nn.Module):
     model_depth: int
     img_dim: int
-    activation: Callable = nn.relu6
+    activation: Callable = nn.activation.relu6
     num_classes: int = 2
 
     def setup(self):
@@ -36,7 +43,6 @@ class Unet(nn.Module):
     def __call__(self, x):
         ys = [None] * (self.model_depth - 1)
 
-        # can I convert to jax.lax.scan?
         for i, (conv1, conv2) in enumerate(self.contracting_convs):
             x = self.activation(conv1(x))
             x = self.activation(conv2(x))
@@ -59,24 +65,88 @@ class Unet(nn.Module):
         x = jnp.reshape(x, (x.shape[0], -1))
         x = self.activation(self.dense1(x))
         x = self.activation(self.dense2(x))
-        x = nn.log_softmax(x)
+        x = nn.activation.log_softmax(x)
         return x
 
 
-batch_size  = 16
-num_epochs  = 30
-train_ratio = 0.8
-lr = 2e-5
-img_dim = 64
-
-model = Unet(model_depth = 3, img_dim = img_dim)
-params = model.init(jax.random.PRNGKey(0), jnp.ones((batch_size, img_dim, img_dim, 3)))
-num_params = format(sum(jax_array.size for jax_array in jax.tree_util.tree_flatten(params)[0]), ',')
-
-print(f'Number of parameters: {num_params}')
+def batched_loss_f(params, x, y_true):
+    y_pred = model.apply(params, x)
+    y_true_one_hot = nn.one_hot(y_true, num_classes = 2, dtype = int)
+    return optax.softmax_cross_entropy(logits = y_pred, labels = y_true_one_hot).mean() # loss is already vectorized 
 
 
-# where to jax.jit?
-# how to create state
+@jax.jit
+def update(state, x, y_true):
+    loss, grads = value_and_grad(batched_loss_f, argnums = 0)(state.params, x, y_true)
+    return state.apply_gradients(grads=grads), loss
 
-print()
+
+@jax.jit
+def eval(state, x_batch, y_batch):
+    y_pred_batch = model.apply(state.params, x_batch)
+    accuracy = jnp.mean(jnp.argmax(y_pred_batch, -1) == y_batch)
+    return accuracy
+
+
+def eval_fn(state, data_loader):
+    accuracies = [eval(state, jnp.array(x_batch), jnp.array(y_batch)) for (x_batch, y_batch) in iter(data_loader)]
+    return sum(accuracies)/len(accuracies)
+
+
+def train_epoch(state, data_loader, bar):
+    epoch_loss = 0.0
+    for (batch_img, batch_label) in iter(data_loader):
+        x = jnp.array(batch_img) # batches need to be converted to jnp array
+        y_true = jnp.array(batch_label)
+        state, batch_loss = update(state, x, y_true)
+        epoch_loss += batch_loss
+        bar.update(1)
+    return state, epoch_loss
+
+
+def train_and_eval(state, train_dl, test_dl, n_epochs):
+    bar = tqdm(total = n_epochs * len(train_dl), ncols = 150, leave = True)
+    bar.colour = '#0000ff'
+    for epoch in range(n_epochs):
+        bar.set_postfix(epoch = f'{epoch + 1} out of {n_epochs}')
+        state, epoch_loss = train_epoch(state, train_dl, bar)
+        # eval for each epoch
+        accuracy = eval_fn(state, test_dl)
+        tqdm.write(f'Epoch: {epoch + 1}, average epoch loss: {epoch_loss/len(train_dl):.6f}. Test accuracy: {accuracy}')
+    return state.params
+
+
+
+if __name__ == '__main__':
+    # constants
+    batch_size  = 16
+    num_epochs  = 30
+    train_ratio = 0.8
+    lr = 2e-5
+    img_dim = 64
+
+    # get data
+    sub_path = 'datasets/histopathologic-cancer-detection/'
+    ds = LoadDataset(sub_path + 'train', sub_path + 'train_labels.csv', dimension=img_dim, sample_fraction=0.02, augment=False, channels_last=True)
+    num_train = int(train_ratio*len(ds))
+    num_test = len(ds) - num_train
+    train_ds, test_ds = random_split(ds, [num_train, num_test])
+    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=5, prefetch_factor=5, pin_memory=True)
+    test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=1, prefetch_factor=1)
+
+
+    # init model and state
+    model = Unet(model_depth = 3, img_dim = img_dim)
+    state = TrainState.create(
+        apply_fn=model.apply,
+        params=model.init(jax.random.PRNGKey(0), jnp.ones((batch_size, img_dim, img_dim, 3))),
+        tx=optax.lion(learning_rate = lr)
+    )
+
+    num_params = format(sum(jax_array.size for jax_array in jax.tree_util.tree_flatten(state.params)[0]), ',')
+    print(f'Learning rate {lr}')
+    print(f'Batch size {batch_size}')
+    print(f'Number of learnable parameters: {num_params}')
+    print(f'Training on {len(train_ds)} examples and {len(train_dl)} batches of size {batch_size}')
+
+    trained_params = train_and_eval(state, train_dl, test_dl, num_epochs)

@@ -10,8 +10,6 @@ from tqdm import tqdm
 
 from load_data import LoadDataset
 
-
-
 # constants
 batch_size  = 1024
 train_ratio = 0.8
