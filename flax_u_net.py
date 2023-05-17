@@ -123,7 +123,7 @@ if __name__ == '__main__':
     num_epochs  = 30
     train_ratio = 0.8
     lr = 2e-5
-    img_dim = 64
+    img_dim = 96
 
     # get data
     sub_path = 'datasets/histopathologic-cancer-detection/'
@@ -133,7 +133,6 @@ if __name__ == '__main__':
     train_ds, test_ds = random_split(ds, [num_train, num_test])
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=5, prefetch_factor=5, pin_memory=True)
     test_dl  = DataLoader(test_ds , batch_size=256, shuffle=True, drop_last=True, num_workers=1, prefetch_factor=1)
-
 
     # init model and state
     model = Unet(model_depth = 3, img_dim = img_dim)
